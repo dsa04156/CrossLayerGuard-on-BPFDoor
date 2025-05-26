@@ -1,0 +1,17 @@
+# 빌드 디렉터리
+/build/
+
+# CMake 출력
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile2
+install_manifest.txt
+
+# eBPF 객체 (소스 관리 안 하고 빌드 후 설치만)
+/ebpf/*.o
+/ebpf/*.o_target/
+
+# 편집기/IDE
+.vscode/
+*~
