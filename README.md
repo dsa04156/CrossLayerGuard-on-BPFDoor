@@ -1,39 +1,68 @@
-# CrossLayer-Guard
+# CrossLayer Guard
 
-커널 계층 간 eBPF 트래픽 추적을 통한 파일리스 백도어 탐지 시스템  
-(XDP / TC / Socket / Syscall 레이어 이벤트 크로스 분석)
+CrossLayer Guard is an eBPF-based cross-layer network and system call validation library that detects magic-packet attacks and hidden system call attacks (e.g., BPFdoor) in real time.
 
 ---
 
-## 목차
+## Table of Contents
 
-1. [Features](#features)  
-2. [Prerequisites](#prerequisites)  
-3. [Installation](#installation)  
-4. [Quick Start (CLI)](#quick-start-cli)  
-5. [C/C++ API Usage](#cc-api-usage)  
-6. [Language Bindings (Go/Python)](#language-bindings-gopython)  
-7. [Advanced Configuration](#advanced-configuration)  
-8. [Logs & Systemd Integration](#logs--systemd-integration)  
-9. [Contributing](#contributing)  
+1. [How It Works](#how-it-works)  
+2. [Features](#features)  
+3. [Prerequisites](#prerequisites)  
+4. [Installation](#installation)  
+5. [Quick Start (CLI)](#quick-start-cli)  
+6. [C/C++ API Usage](#cc-api-usage)  
+7. [Language Bindings (Go/Python)](#language-bindings-gopython)  
+8. [Advanced Configuration](#advanced-configuration)  
+9. [Logs & Systemd Integration](#logs--systemd-integration)  
+10. [Contributing](#contributing)  
+
+---
+
+## How It Works
+
+CrossLayer Guard tracks each network flow across four kernel layers to detect anomalies:
+
+- **XDP layer**: Captures packets at the earliest point (before the kernel network stack) and assigns a flow ID.  
+- **TC Ingress layer**: Records the same flow ID after L2/L3 processing.  
+- **Socket layer**: Hooks socket send operations and logs the flow ID when packets exit via sockets.  
+- **Syscall (Control-plane)**: Intercepts user-space `connect()` and `sendto()` syscalls and records metadata under the same flow ID.  
+
+In user space, an aggregator maintains a bitmask (`mask_map`) for each flow ID:  
+- bit 0 for XDP  
+- bit 1 for TC  
+- bit 2 for Socket  
+
+When a syscall event arrives, it evaluates the bitmask:
+
+- `mask == 0`: No packet seen but syscall occurred → **invisible syscall-only** alert  
+- `(mask & (1<<0 | 1<<1)) == 0`: Packet-layer bypass → **bypassed packet-layers** alert  
+- `(mask & (1<<2)) == 0`: Missing socket layer → **no socket-layer** alert  
+- Otherwise: Flow is consistent → **OK** log  
+
+This cross-layer validation effectively detects stealthy or forged flows such as BPFdoor attacks.
 
 ---
 
 ## Features
 
-- eBPF 기반 트래픽 탐지: XDP, TC, Socket, Syscall 계층별 추적  
-- Generic XDP 및 AF_PACKET 지원  
-- 화이트리스트 기반 필터링 (IPv4)  
-- 실시간 로그/경보: `[ALERT]`, `[OK]`, `[CTRL]` 등  
-- Go / Python 바인딩 제공  
-- Systemd 서비스로 실행 가능
+- Cross-layer tracking: XDP, TC Ingress, Socket filter, and Syscall probes  
+- White-list filtering for IPv4 addresses  
+- Real-time alerts: `[ALERT]`, `[INFO]`, `[OK]`, `[LOST]`  
+- Static library (`libclg_user.a`) and CLI tool (`clgctl`)  
+- Go and Python language bindings  
+- Systemd service support for background execution  
 
 ---
 
 ## Prerequisites
 
-Ubuntu 기준 의존 패키지 설치:
+- Linux kernel version ≥ 5.x with BPF CO-RE support  
+- Build tools: `clang`, `llvm`, `cmake` (≥ 3.15), `make`, `pkg-config`  
+- Development libraries: `libbpf-dev`, `libelf-dev`, `bpftool`  
+- Optional utilities for CLI testing: `nmap-nping`, `socat`, `iproute2`  
 
+Example (Ubuntu):
 ```bash
 sudo apt update
 sudo apt install -y \
@@ -41,62 +70,66 @@ sudo apt install -y \
     libbpf-dev libelf-dev bpftool \
     nmap-nping socat iproute2
 ```
+
 ## Installation
-### 프로젝트 클론
+
+1. Clone the repository and navigate to the project directory:  
 ```bash
 git clone https://github.com/yourorg/crosslayer-guard.git
 cd crosslayer-guard
 ```
-### 빌드 및 설치
+
+2. Build and install:
 ```bash
 mkdir build && cd build
-cmake
+cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
 sudo make install
-eBPF 오브젝트 파일(.o)은 /usr/local/lib/crosslayer-ebpf/에 설치
+```
+- eBPF object files (.o) are installed to /usr/local/lib/crosslayer-ebpf/
 
-clgctl CLI 도구는 /usr/local/bin/에 설치
-```
+- The CLI tool clgctl is installed to /usr/local/bin/
+
+- The static library libclg_user.a is installed to /usr/local/lib/
+
 ## Quick Start (CLI)
-### 화이트리스트 관리
-#### IP 추가
+
+### Manage Whitelist
 ```bash
-clgctl whitelist add 192.168.0.10
-```
-#### IP 제거
-```bash
-clgctl whitelist del 192.168.0.10
-```
-### 전체 목록 조회
-```bash
+# List current whitelist entries
 clgctl whitelist list
+
+# Add an IP to the whitelist
+clgctl whitelist add 10.1.1.1
+
+# Remove an IP from the whitelist
+clgctl whitelist del 10.1.1.1
 ```
-### 실시간 모니터링
+
+### Run Monitoring
 ```bash
+# Start monitoring on interface enp0s8
 sudo clgctl /usr/local/lib/crosslayer-ebpf enp0s8
 ```
+Real-time logs appear with tags [XDP], [TC], [SOCK], [CTRL], [ALERT], and [OK].
 
+## Advanced Configuration
+- Adjust MAX_IDS (default 1024) in include/record.h for maximum concurrent flows
+
+- Modify log output format in src/aggregator.cpp
+
+- Edit eBPF programs in ebpf/ and rebuild with make all_bpf
 
 ## Logs & Systemd Integration
-### Systemd 서비스 등록
+To run as a systemd service:
+
 ```bash
 sudo systemctl enable crosslayer.service
 sudo systemctl start crosslayer.service
 ```
 
-### 로그 파일 확인:
+Logs are written to /var/log/clg.log and /var/log/clg.err:
 ```bash
 tail -f /var/log/clg.log
 ```
 
-## Contributing
-```bash
-레포지토리 Fork
-
-브랜치 생성: git checkout -b feature/my-feature
-
-작업 후 커밋: git commit -m "feat: 설명"
-
-PR 생성
-
-```
