@@ -3,7 +3,7 @@ Description=CrossLayer Guard BPF Monitor
 After=network.target
 
 [Service]
-ExecStart=@CMAKE_INSTALL_PREFIX@/bin/clgctl @CMAKE_INSTALL_PREFIX@/lib/crosslayer-ebpf ${CLG_INTERFACE}
+ExecStart=@CMAKE_INSTALL_PREFIX@/bin/clgctl @CMAKE_INSTALL_PREFIX@/lib/crosslayer-ebpf @CLG_INTERFACE@
 Restart=always
 RestartSec=3
 StandardOutput=append:/var/log/clg.log
