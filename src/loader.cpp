@@ -105,6 +105,20 @@ clg_error_t clg_load_probes(const char *bpf_dir,
     obj_tc   = load_obj(1, "tc_record.o");
     obj_sock = load_obj(2, "sock_record.o");
 
+    struct bpf_map *wh_map = bpf_object__find_map_by_name(obj_xdp, "whitelist_ips");
+    if (!wh_map) {
+        std::cerr << "ERROR: whitelist_ips map not found\n";
+    } else {
+        int pin_ret = bpf_map__pin(wh_map, "/sys/fs/bpf/whitelist_ips");
+        if (pin_ret) {
+            perror("bpf_map__pin whitelist_ips");
+        } else {
+            std::cout << "Pinned whitelist_ips to /sys/fs/bpf/whitelist_ips\n";
+        }
+    }
+
+
+
     // 4) 인터페이스 인덱스 조회
     if ((ifindex = if_nametoindex(ifname)) == 0) {
         std::cerr << "ERROR: invalid interface: " << ifname << "\n";
