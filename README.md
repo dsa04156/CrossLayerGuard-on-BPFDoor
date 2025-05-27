@@ -67,7 +67,7 @@ Example (Ubuntu):
 sudo apt update
 sudo apt install -y \
     clang llvm build-essential cmake pkg-config \
-    libbpf-dev libelf-dev bpftool \
+    libbpf-dev libelf-dev linux-tools-common \
     nmap-nping socat iproute2
 ```
 
@@ -133,3 +133,27 @@ Logs are written to /var/log/clg.log and /var/log/clg.err:
 tail -f /var/log/clg.log
 ```
 
+## ERROR
+###  'asm/types.h' file not found
+```bash
+ls -l /usr/include/asm
+```
+This showed that the link was pointing to aarch64-linux-gnu/asm, which is for ARM architectures. My system is x86_64, so this was wrong.
+
+Find the correct asm/types.h I searched for types.h files in the asm directories:
+
+find /usr/include -name "types.h" | grep asm
+This pointed me to /usr/include/x86_64-linux-gnu/asm/types.h.
+
+Fix the symbolic link I removed the incorrect link and created a new one pointing to the correct directory:
+```bash
+sudo rm /usr/include/asm
+sudo ln -s /usr/include/x86_64-linux-gnu/asm /usr/include/asm
+```
+Verify the fix I ran:
+```bash
+ls -l /usr/include/asm
+```
+Now the link points to /usr/include/x86_64-linux-gnu/asm.
+
+Retry the command After this, running go generate worked perfectly without any errors.
