@@ -1,0 +1,14 @@
+[Unit]
+Description=CrossLayer Guard BPF Monitor
+After=network.target
+
+[Service]
+ExecStart=@CMAKE_INSTALL_PREFIX@/bin/clgctl @CMAKE_INSTALL_PREFIX@/lib/crosslayer-ebpf enp0s8
+Restart=always
+RestartSec=3
+StandardOutput=append:/var/log/clg.log
+StandardError=append:/var/log/clg.err
+User=root
+
+[Install]
+WantedBy=multi-user.target

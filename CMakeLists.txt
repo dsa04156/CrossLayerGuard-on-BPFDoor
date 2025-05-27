@@ -92,6 +92,25 @@ target_link_libraries(debug_reader
       rt
 )
 
+# ── 5) Systemd 서비스 유닛 설치 ───────────────────────────────
+configure_file(
+    ${CMAKE_SOURCE_DIR}/system/crosslayer.service.in
+    ${CMAKE_BINARY_DIR}/crosslayer.service
+    @ONLY
+)
+
+install(FILES ${CMAKE_BINARY_DIR}/crosslayer.service
+        DESTINATION /etc/systemd/system)
+
+# post-install hook: systemd 등록 스크립트
+install(CODE "
+    execute_process(COMMAND systemctl daemon-reexec)
+    execute_process(COMMAND systemctl enable crosslayer.service)
+    execute_process(COMMAND systemctl restart crosslayer.service)
+    message(STATUS \"Systemd service installed and started.\")
+")
+
+
 # ── 5) 설치 설정 ─────────────────────────────────────────────────────
 install(DIRECTORY include/ DESTINATION include)
 
