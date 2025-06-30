@@ -10,6 +10,20 @@
 #include "ctrl_event.h"
 #include "record.h"
 
+
+#include <chrono>
+#include <iomanip>
+#include <sstream>
+
+static std::string current_time_str() {
+    auto now = std::chrono::system_clock::now();
+    auto t = std::chrono::system_clock::to_time_t(now);
+    std::tm tm {};
+    localtime_r(&t, &tm);
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%F %T"); // "YYYY-MM-DD HH:MM:SS"
+    return oss.str();
+}
 // ID별 레이어 플래그 저장
 static uint8_t mask_map[MAX_IDS] = {};
 
@@ -36,7 +50,7 @@ static void handle_xdp(void *ctx, int cpu, void *data, __u32 sz) {
     inet_ntop(AF_INET, &m.src_ip, s_src, sizeof(s_src));
     inet_ntop(AF_INET, &m.dst_ip, s_dst, sizeof(s_dst));
 
-    std::cout << "[XDP]  "
+    std::cout << current_time_str() << " [XDP]  "
               << s_src << ":" << ntohs(m.src_port)
               << " -> "
               << s_dst << ":" << ntohs(m.dst_port)
@@ -57,7 +71,7 @@ static void handle_tc(void *ctx, int cpu, void *data, __u32 sz) {
     inet_ntop(AF_INET, &m.src_ip, s_src, sizeof(s_src));
     inet_ntop(AF_INET, &m.dst_ip, s_dst, sizeof(s_dst));
 
-    std::cout << "[TC ]  "
+    std::cout << current_time_str() << " [TC ]  "
               << s_src << ":" << ntohs(m.src_port)
               << " -> "
               << s_dst << ":" << ntohs(m.dst_port)
@@ -79,7 +93,7 @@ static void handle_sock(void *ctx, int cpu, void *data, __u32 sz) {
     inet_ntop(AF_INET, &m.dst_ip, s_dst, sizeof(s_dst));
     if (m.src_ip == m.dst_ip && m.src_port == m.dst_port)
         return;
-    std::cout << "[SOCK] "
+    std::cout << current_time_str() << " [SOCK] "
               << s_src << ":" << ntohs(m.src_port)
               << " -> "
               << s_dst << ":" << ntohs(m.dst_port)
@@ -99,8 +113,14 @@ static void handle_ctrl(void *ctx, int cpu, void *data, __u32 sz) {
     uint8_t  m_val = mask_map[idx];
     uint8_t  proto = e->proto;
     uint16_t dport = full_id & 0xFFFF;
-
-    std::cout << "[CTRL] id="    << full_id
+    if (dport == 0 || dport == 43) {
+        // 하위 16비트가 0인 full_id는 실제 TCP/UDP 연결이 없음 → 무시
+        return;
+    }
+    if (proto == 17 && dport == 123) {
+        return;
+    }
+    std::cout << current_time_str() <<  " [CTRL] id="    << full_id
               << " code="       << int(e->code)
               << " proto="      << int(proto)
               << " dport="      << dport
@@ -110,26 +130,26 @@ static void handle_ctrl(void *ctx, int cpu, void *data, __u32 sz) {
     // Cross-layer Validation
     if ((m_val & 0x07) == 0) {
         if (is_benign_traffic(proto, dport)) {
-            std::cout << "[INFO ] benign syscall-only: id=" << full_id
+            std::cout << current_time_str() <<  " [INFO ] benign syscall-only: id=" << full_id
                       << " proto=" << int(proto)
                       << " dport=" << dport
                       << "\n";
         } else {
-            std::cout << "[ALERT] invisible syscall-only: id=" << full_id
+            std::cout << current_time_str() <<  " [ALERT] invisible syscall-only: id=" << full_id
                       << " proto=" << int(proto)
                       << " dport=" << dport
                       << "\n";
         }
     } else if (!(m_val & ((1 << 0) | (1 << 1)))) {
-        std::cout << "[ALERT] bypassed packet-layers: id=" << full_id
+        std::cout << current_time_str() <<  " [ALERT] bypassed packet-layers: id=" << full_id
                   << " mask=0x" << std::hex << int(m_val) << std::dec
                   << "\n";
     } else if (!(m_val & (1 << 2))) {
-        std::cout << "[ALERT] no socket-layer: id=" << full_id
+        std::cout << current_time_str() <<  " [ALERT] no socket-layer: id=" << full_id
                   << " mask=0x" << std::hex << int(m_val) << std::dec
                   << "\n";
     } else {
-        std::cout << "[OK   ] matched flow: id=" << full_id
+        std::cout << current_time_str() <<  " [OK   ] matched flow: id=" << full_id
                   << " mask=0x" << std::hex << int(m_val) << std::dec
                   << "\n";
     }
@@ -139,7 +159,7 @@ static void handle_ctrl(void *ctx, int cpu, void *data, __u32 sz) {
 
 // 손실된 이벤트 보고
 static void handle_lost(void *ctx, int cpu, __u64 cnt) {
-    std::cerr << "[LOST] " << cnt << " events on CPU " << cpu << "\n";
+    std::cerr << current_time_str() <<  " [LOST] " << cnt << " events on CPU " << cpu << "\n";
 }
 
 clg_error_t clg_start_aggregator(clg_handle_t *h) {
